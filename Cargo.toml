@@ -1,0 +1,11 @@
+[package]
+name = "beam"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2.6.0"
+
+[lib]
+name = "beam"
+path = "source/lib.rs"
