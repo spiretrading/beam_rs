@@ -5,6 +5,8 @@ use std::sync::Condvar;
 use std::sync::Mutex;
 use std::thread_local;
 
+use corosensei::Coroutine;
+
 use crate::routines::promise::*;
 
 pub(crate) static ROUTINE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -173,5 +175,28 @@ impl Routine for ExternalRoutine {
 
   fn set_state(&mut self, state: RoutineState) {
     self.state = state;
+  }
+}
+
+struct ScheduledRoutine {
+  state: RoutineState,
+  id: u64,
+  wait_promises: Mutex<Vec<Promise<(), ()>>>,
+  is_pending_resume: bool,
+  context_id: usize,
+  function: Coroutine<(), (), ()>
+}
+
+impl ScheduledRoutine {
+  fn new<F: FnOnce()>(f: F, stack_size: usize, context_id: usize) -> Self {
+    let id = ROUTINE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    if context_id == usize::MAX {
+      context_id = id;// % std::thread::available_parallelism();
+    } else {
+    }
+
+    ScheduledRoutine {
+      is_pending_resume: false,
+    }
   }
 }

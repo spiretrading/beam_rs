@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2.6.0"
+corosensei = "0.2.1"
 intrusive-collections = "0.9.7"
 
 [lib]
