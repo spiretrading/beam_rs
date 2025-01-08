@@ -26,7 +26,7 @@ impl<T, E> FutureData<T, E> {
 }
 
 pub struct Future<T, E> {
-  data: Arc<Mutex<FutureData<T, E>>>,
+  pub(crate) data: Arc<Mutex<FutureData<T, E>>>,
 }
 
 impl<T, E> Future<T, E> {

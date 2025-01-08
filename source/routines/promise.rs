@@ -8,6 +8,12 @@ pub struct Promise<T, E> {
 }
 
 impl<T, E> Promise<T, E> {
+  pub fn new_link() -> (Self, Future<T, E>) {
+    let future = Future::new();
+    let promise = Promise::new(future.data.clone());
+    (promise, future)
+  }
+
   pub(crate) fn new(data: Arc<Mutex<FutureData<T, E>>>) -> Self {
     Promise { data: data }
   }

@@ -26,7 +26,13 @@ pub enum RoutineState {
 pub(crate) trait Routine {
   fn id(&self) -> u64;
 
+  fn context_id(&self) -> usize;
+
   fn state(&self) -> RoutineState;
+
+  fn is_pending_resume(&self) -> bool;
+
+  fn set_pending_resume(&mut self, is_pending_resume: bool);
 
   fn wait(&mut self, result: Promise<(), ()>);
 
@@ -113,9 +119,19 @@ impl Routine for ExternalRoutine {
     self.id
   }
 
+  fn context_id(&self) -> usize {
+    usize::MAX
+  }
+
   fn state(&self) -> RoutineState {
     self.state
   }
+
+  fn is_pending_resume(&self) -> bool {
+    false
+  }
+
+  fn set_pending_resume(&mut self, _: bool) {}
 
   fn wait(&mut self, result: Promise<(), ()>) {
     let mut wait_promises = self.wait_promises.lock().unwrap();
