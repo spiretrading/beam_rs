@@ -58,9 +58,7 @@ pub fn defer() {
   current_routine().defer();
 }
 
-pub fn wait(routine: u64) {
-
-}
+pub fn wait(routine: u64) {}
 
 pub(crate) fn suspend() {
   current_routine().suspend();
@@ -84,6 +82,7 @@ pub(crate) struct ExternalRoutine {
   id: u64,
   is_pending_resume: Mutex<bool>,
   suspended_condition: Condvar,
+  wait_promises: Mutex<Vec<Promise<(), ()>>>,
 }
 
 impl ExternalRoutine {
@@ -93,6 +92,7 @@ impl ExternalRoutine {
       id: ROUTINE_ID_COUNTER.fetch_add(1, Ordering::SeqCst),
       is_pending_resume: Mutex::new(false),
       suspended_condition: Condvar::new(),
+      wait_promises: Mutex::new(Vec::new()),
     }
   }
 }
@@ -100,6 +100,11 @@ impl ExternalRoutine {
 impl Drop for ExternalRoutine {
   fn drop(&mut self) {
     self.state = RoutineState::Complete;
+    let mut lock = self.wait_promises.lock().unwrap();
+    let wait_promises = std::mem::take(&mut *lock);
+    for promise in wait_promises.into_iter() {
+      promise.resolve(());
+    }
   }
 }
 
@@ -110,6 +115,11 @@ impl Routine for ExternalRoutine {
 
   fn state(&self) -> RoutineState {
     self.state
+  }
+
+  fn wait(&mut self, result: Promise<(), ()>) {
+    let mut wait_promises = self.wait_promises.lock().unwrap();
+    wait_promises.push(result);
   }
 
   fn run(&mut self) {
