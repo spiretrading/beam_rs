@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
 use std::num::NonZero;
+use std::ptr::addr_of_mut;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -32,9 +33,9 @@ impl Context {
 
 pub(crate) struct Scheduler {
   thread_count: usize,
-  threads: Box<[Option<JoinHandle<()>>]>,
   routine_ids: Mutex<HashMap<u64, *mut dyn Routine>>,
   contexts: Box<[Mutex<Context>]>,
+  threads: Box<[Option<JoinHandle<()>>]>,
 }
 
 impl Scheduler {
@@ -42,16 +43,22 @@ impl Scheduler {
     let mut scheduler_box = Box::new(MaybeUninit::<Self>::uninit());
     let scheduler = scheduler_box.as_mut_ptr();
     unsafe {
-      (*scheduler).thread_count = std::thread::available_parallelism()
-        .unwrap_or(NonZero::new(2).unwrap())
-        .get();
-      let mut threads = Vec::new();
+      addr_of_mut!((*scheduler).thread_count).write(
+        std::thread::available_parallelism()
+          .unwrap_or(NonZero::new(2).unwrap())
+          .get());
+      addr_of_mut!((*scheduler).routine_ids).write(
+        Mutex::new(HashMap::new()));
+      /*
       let mut contexts = Vec::new();
       for _ in 0..(*scheduler).thread_count {
         contexts.push(Mutex::new(Context::new()));
       }
-      (*scheduler).contexts = contexts.into_boxed_slice();
-      let scheduler_ptr = scheduler as usize;
+      */
+//      (*scheduler).contexts = contexts.into_boxed_slice();
+//      let scheduler_ptr = scheduler as usize;
+      /*
+      let mut threads = Vec::new();
       for i in 0..(*scheduler).thread_count {
         threads.push(Some(std::thread::spawn(move || {
           let scheduler = scheduler_ptr as *mut Scheduler;
@@ -59,8 +66,8 @@ impl Scheduler {
         })));
       }
       (*scheduler).threads = threads.into_boxed_slice();
-      (*scheduler).routine_ids = Mutex::new(HashMap::new());
-      Box::from_raw(Box::into_raw(scheduler_box) as *mut Self)
+      */
+      Box::from_raw(Box::into_raw(scheduler_box) as *mut _)
     }
   }
 }
@@ -172,7 +179,7 @@ impl Scheduler {
         }
         unsafe { &mut *context.pending_routines.pop_front().unwrap() }
       };
-      //      routine.continue();
+      routine.advance();
       match routine.state() {
         RoutineState::Complete => {
           self.routine_ids.lock().unwrap().remove(&routine.id());

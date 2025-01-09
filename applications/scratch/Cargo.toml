@@ -1,0 +1,11 @@
+[package]
+name = "scratch"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+beam = { path = "../../library" }
+
+[[bin]]
+name = "scratch"
+path = "source/main.rs"

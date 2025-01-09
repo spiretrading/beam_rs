@@ -52,6 +52,8 @@ pub(crate) trait Routine {
 
   fn resume(&mut self);
 
+  fn advance(&mut self);
+
   fn set_state(&mut self, state: RoutineState);
 }
 
@@ -70,13 +72,15 @@ pub fn defer() {
   current_routine().defer();
 }
 
-pub fn wait(routine: u64) {}
+pub fn wait(routine: u64) {
+  get_scheduler().wait(routine);
+}
 
 pub(crate) fn suspend() {
   current_routine().suspend();
 }
 
-pub fn suspend_into(suspended_routine: &mut &'static mut dyn Routine) {
+pub(crate) fn suspend_into(suspended_routine: &mut &'static mut dyn Routine) {
   *suspended_routine = current_routine();
   suspend();
 }
@@ -166,6 +170,8 @@ impl Routine for ExternalRoutine {
     self.suspended_condition.notify_one();
   }
 
+  fn advance(&mut self) {}
+
   fn set_state(&mut self, state: RoutineState) {
     self.state = state;
   }
@@ -218,6 +224,7 @@ impl ScheduledRoutine {
         move |yielder, _| {
           (*routine).yielder = yielder as *const Yielder<(), ()>;
           f();
+          (*routine).set_state(RoutineState::Complete);
         },
       ));
       Box::from_raw(Box::into_raw(routine_box) as *mut Self)
@@ -278,6 +285,20 @@ impl Routine for ScheduledRoutine {
 
   fn resume(&mut self) {
     get_scheduler().resume(self);
+  }
+
+  fn advance(&mut self) {
+    CURRENT_ROUTINE.with(|routine_cell| {
+      let mut routine = routine_cell.borrow_mut();
+      *routine = Some(self);
+    });
+    self.is_pending_resume = false;
+    self.set_state(RoutineState::Running);
+    self.function.as_mut().unwrap().resume(());
+    CURRENT_ROUTINE.with(|routine_cell| {
+      let mut routine = routine_cell.borrow_mut();
+      *routine = None;
+    });
   }
 
   fn set_state(&mut self, state: RoutineState) {
