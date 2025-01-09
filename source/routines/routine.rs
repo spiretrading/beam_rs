@@ -1,13 +1,17 @@
 use std::cell::RefCell;
+use std::mem::MaybeUninit;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::thread_local;
 
+use corosensei::stack::DefaultStack;
 use corosensei::Coroutine;
+use corosensei::Yielder;
 
 use crate::routines::promise::*;
+use crate::routines::scheduler::*;
 
 pub(crate) static ROUTINE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -105,17 +109,6 @@ impl ExternalRoutine {
   }
 }
 
-impl Drop for ExternalRoutine {
-  fn drop(&mut self) {
-    self.state = RoutineState::Complete;
-    let mut lock = self.wait_promises.lock().unwrap();
-    let wait_promises = std::mem::take(&mut *lock);
-    for promise in wait_promises.into_iter() {
-      promise.resolve(());
-    }
-  }
-}
-
 impl Routine for ExternalRoutine {
   fn id(&self) -> u64 {
     self.id
@@ -178,25 +171,127 @@ impl Routine for ExternalRoutine {
   }
 }
 
-struct ScheduledRoutine {
+impl Drop for ExternalRoutine {
+  fn drop(&mut self) {
+    self.state = RoutineState::Complete;
+    let mut lock = self.wait_promises.lock().unwrap();
+    let wait_promises = std::mem::take(&mut *lock);
+    for promise in wait_promises.into_iter() {
+      promise.resolve(());
+    }
+  }
+}
+
+pub(crate) struct ScheduledRoutine {
   state: RoutineState,
   id: u64,
   wait_promises: Mutex<Vec<Promise<(), ()>>>,
   is_pending_resume: bool,
   context_id: usize,
-  function: Coroutine<(), (), ()>
+  function: Option<Coroutine<(), (), ()>>,
+  yielder: *const Yielder<(), ()>,
 }
 
 impl ScheduledRoutine {
-  fn new<F: FnOnce()>(f: F, stack_size: usize, context_id: usize) -> Self {
+  pub(crate) fn new<F: FnOnce()>(
+    f: F,
+    stack_size: usize,
+    mut context_id: usize,
+  ) -> Box<Self>
+  where
+    F: 'static,
+  {
     let id = ROUTINE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
     if context_id == usize::MAX {
-      context_id = id;// % std::thread::available_parallelism();
-    } else {
+      context_id = id as usize % get_scheduler().thread_count();
     }
+    let mut routine_box = Box::new(MaybeUninit::<Self>::uninit());
+    let routine = routine_box.as_mut_ptr();
+    unsafe {
+      (*routine).state = RoutineState::Pending;
+      (*routine).id = id;
+      (*routine).wait_promises = Mutex::new(Vec::new());
+      (*routine).is_pending_resume = false;
+      (*routine).context_id = context_id;
+      (*routine).function = Some(Coroutine::with_stack(
+        DefaultStack::new(stack_size).unwrap(),
+        move |yielder, _| {
+          (*routine).yielder = yielder as *const Yielder<(), ()>;
+          f();
+        },
+      ));
+      Box::from_raw(Box::into_raw(routine_box) as *mut Self)
+    }
+  }
+}
 
-    ScheduledRoutine {
-      is_pending_resume: false,
+impl Routine for ScheduledRoutine {
+  fn id(&self) -> u64 {
+    self.id
+  }
+
+  fn context_id(&self) -> usize {
+    self.context_id
+  }
+
+  fn state(&self) -> RoutineState {
+    self.state
+  }
+
+  fn is_pending_resume(&self) -> bool {
+    self.is_pending_resume
+  }
+
+  fn set_pending_resume(&mut self, is_pending_resume: bool) {
+    self.is_pending_resume = is_pending_resume;
+  }
+
+  fn wait(&mut self, result: Promise<(), ()>) {
+    let mut wait_promises = self.wait_promises.lock().unwrap();
+    wait_promises.push(result);
+  }
+
+  fn run(&mut self) {
+    self.function.as_mut().unwrap().resume(());
+  }
+
+  fn defer(&mut self) {
+    CURRENT_ROUTINE.with(|routine_cell| {
+      let mut routine = routine_cell.borrow_mut();
+      *routine = None;
+    });
+    unsafe { (*self.yielder).suspend(()) };
+  }
+
+  fn pending_suspend(&mut self) {
+    self.set_state(RoutineState::PendingSuspend);
+  }
+
+  fn suspend(&mut self) {
+    CURRENT_ROUTINE.with(|routine_cell| {
+      let mut routine = routine_cell.borrow_mut();
+      *routine = None;
+    });
+    self.set_state(RoutineState::PendingSuspend);
+    unsafe { (*self.yielder).suspend(()) };
+  }
+
+  fn resume(&mut self) {
+    get_scheduler().resume(self);
+  }
+
+  fn set_state(&mut self, state: RoutineState) {
+    self.state = state;
+  }
+}
+
+impl Drop for ScheduledRoutine {
+  fn drop(&mut self) {
+    self.state = RoutineState::Complete;
+    let mut lock = self.wait_promises.lock().unwrap();
+    let wait_promises = std::mem::take(&mut *lock);
+    for promise in wait_promises.into_iter() {
+      promise.resolve(());
     }
   }
 }
