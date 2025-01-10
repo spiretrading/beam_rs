@@ -49,15 +49,12 @@ impl Scheduler {
           .get());
       addr_of_mut!((*scheduler).routine_ids).write(
         Mutex::new(HashMap::new()));
-      /*
       let mut contexts = Vec::new();
       for _ in 0..(*scheduler).thread_count {
         contexts.push(Mutex::new(Context::new()));
       }
-      */
-//      (*scheduler).contexts = contexts.into_boxed_slice();
-//      let scheduler_ptr = scheduler as usize;
-      /*
+      addr_of_mut!((*scheduler).contexts).write(contexts.into_boxed_slice());
+      let scheduler_ptr = scheduler as usize;
       let mut threads = Vec::new();
       for i in 0..(*scheduler).thread_count {
         threads.push(Some(std::thread::spawn(move || {
@@ -65,8 +62,7 @@ impl Scheduler {
           (*scheduler).run(&mut (*scheduler).contexts[i]);
         })));
       }
-      (*scheduler).threads = threads.into_boxed_slice();
-      */
+      addr_of_mut!((*scheduler).threads).write(threads.into_boxed_slice());
       Box::from_raw(Box::into_raw(scheduler_box) as *mut _)
     }
   }

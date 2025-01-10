@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
+use std::ptr::addr_of_mut;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::Condvar;
@@ -214,19 +215,19 @@ impl ScheduledRoutine {
     let mut routine_box = Box::new(MaybeUninit::<Self>::uninit());
     let routine = routine_box.as_mut_ptr();
     unsafe {
-      (*routine).state = RoutineState::Pending;
-      (*routine).id = id;
-      (*routine).wait_promises = Mutex::new(Vec::new());
-      (*routine).is_pending_resume = false;
-      (*routine).context_id = context_id;
-      (*routine).function = Some(Coroutine::with_stack(
+      addr_of_mut!((*routine).state).write(RoutineState::Pending);
+      addr_of_mut!((*routine).id).write(id);
+      addr_of_mut!((*routine).wait_promises).write(Mutex::new(Vec::new()));
+      addr_of_mut!((*routine).is_pending_resume).write(false);
+      addr_of_mut!((*routine).context_id).write(context_id);
+      addr_of_mut!((*routine).function).write(Some(Coroutine::with_stack(
         DefaultStack::new(stack_size).unwrap(),
         move |yielder, _| {
           (*routine).yielder = yielder as *const Yielder<(), ()>;
           f();
           (*routine).set_state(RoutineState::Complete);
         },
-      ));
+      )));
       Box::from_raw(Box::into_raw(routine_box) as *mut Self)
     }
   }
