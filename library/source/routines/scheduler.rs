@@ -10,8 +10,9 @@ use std::sync::MutexGuard;
 use std::sync::Once;
 use std::thread::JoinHandle;
 
-use crate::routines::promise::Promise;
+use crate::routines::promise::*;
 use crate::routines::routine::*;
+use crate::routines::scheduled_routine::*;
 
 struct Context {
   is_running: bool,
