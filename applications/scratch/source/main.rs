@@ -5,4 +5,5 @@ fn main() {
     });
     println!("B");
     beam::routines::wait(foo);
+    println!("C");
 }

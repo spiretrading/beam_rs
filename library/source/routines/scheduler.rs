@@ -47,9 +47,9 @@ impl Scheduler {
       addr_of_mut!((*scheduler).thread_count).write(
         std::thread::available_parallelism()
           .unwrap_or(NonZero::new(2).unwrap())
-          .get());
-      addr_of_mut!((*scheduler).routine_ids).write(
-        Mutex::new(HashMap::new()));
+          .get(),
+      );
+      addr_of_mut!((*scheduler).routine_ids).write(Mutex::new(HashMap::new()));
       let mut contexts = Vec::new();
       for _ in 0..(*scheduler).thread_count {
         contexts.push(Mutex::new(Context::new()));

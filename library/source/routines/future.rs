@@ -12,7 +12,7 @@ pub enum FutureState {
 
 pub(crate) struct FutureData<T, E> {
   state: FutureState,
-  suspended_routines: Option<SuspendedRoutineQueue>,
+  suspended_routines: SuspendedRoutineQueue,
   pub(crate) result: Option<Result<T, E>>,
 }
 
@@ -21,7 +21,7 @@ impl<T, E> FutureData<T, E> {
     assert!(self.state == FutureState::Pending);
     assert!(state != FutureState::Pending);
     self.state = state;
-    resume(self.suspended_routines.as_mut().unwrap());
+    resume(&mut self.suspended_routines);
   }
 }
 
@@ -34,9 +34,9 @@ impl<T, E> Future<T, E> {
     Future {
       data: Arc::new(Mutex::new(FutureData {
         state: FutureState::Pending,
-        suspended_routines: Some(SuspendedRoutineQueue::new(
+        suspended_routines: SuspendedRoutineQueue::new(
           SuspendedRoutineNodeAdapter::new(),
-        )),
+        ),
         result: None,
       })),
     }
@@ -45,11 +45,9 @@ impl<T, E> Future<T, E> {
   pub fn result(self) -> Result<T, E> {
     let mut data = self.data.lock().unwrap();
     while data.state == FutureState::Pending {
-      let mut suspended_routines =
-        std::mem::take(&mut data.suspended_routines).unwrap();
-      suspend(&mut suspended_routines, data);
+      let suspended_routines = &mut data.suspended_routines as *mut _;
+      suspend(unsafe { &mut *suspended_routines }, data);
       data = self.data.lock().unwrap();
-      data.suspended_routines = Some(suspended_routines);
     }
     return std::mem::replace(&mut data.result, None).unwrap();
   }
